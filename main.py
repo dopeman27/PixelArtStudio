@@ -1410,13 +1410,14 @@ while run:
 
             if not user.settings_mode:
                 if event.key == pygame.K_RIGHT:
-                    if not arrow_pressed:
+                    print(num_files)
+                    if not arrow_pressed and num_files > 1:
                         if current_loaded < num_files - 1:
                             current_loaded += 1
                         arrow_pressed = True
                         loading = True
                 if event.key == pygame.K_LEFT:
-                    if not arrow_pressed:
+                    if not arrow_pressed and num_files > 1:
                         if current_loaded > 0:
                             current_loaded -= 1
                         arrow_pressed = True

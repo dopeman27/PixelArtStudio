@@ -37,7 +37,7 @@ pixels = []
 
 import os, os.path
 
-num_files = len([name for name in os.listdir('Projects')])
+num_files = len([name for name in os.listdir('Projects')]) - 1
 
 def save_object(name='object', data=pixels):
     #num_files = len([name for name in os.listdir('custom_objects')])
