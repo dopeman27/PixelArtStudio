@@ -42,6 +42,12 @@ num_files = len([name for name in os.listdir('Projects')]) - 1
 def save_object(name='object', data=pixels):
     #num_files = len([name for name in os.listdir('custom_objects')])
 
+    for list in data:
+        for index, color in enumerate(list):
+            color1 = (int(color[0]), int(color[1]), int(color[2]))
+            list[index] = color1
+    
+
     name = name + str(num_files)
     path = 'Projects/' + name + '.txt'
     with open(path, 'w') as f:
