@@ -4,7 +4,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from drawing import load_object, load_object_by_whole_name
 
-files = [name for name in os.listdir('Projects')]
+files = [name for name in os.listdir('Projects') if name.endswith('.txt')]
 num_files = len(files)
 
 pictures = [name for name in os.listdir('Saved-Pictures') if name.endswith('.jpg')]
