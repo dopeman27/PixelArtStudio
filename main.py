@@ -89,17 +89,17 @@ def draw_border(x, y, thickness):
     pygame.draw.rect(screen, (255, 255, 255), rect3)
     pygame.draw.rect(screen, (255, 255, 255), rect4)
 
-def draw_canvas():
-    global pixels
-    start_x, start_y = border_x + offset_x, border_y + offset_y
-    if len(pixels) != gridSize or len(pixels[0]) != gridSize:
-        pixels = [[(0, 0, 0) for _ in range(gridSize)] for _ in range(gridSize)]
-    #print(start_x, start_y)
-    for y in range(gridSize):
-        for x in range(gridSize):
-            rect = pygame.Rect(pixel_size * x + start_x, y * pixel_size + start_y, pixel_size, pixel_size)
-            pygame.draw.rect(screen, pixels[y][x], rect)
-            #pygame.draw.rect(screen, (50, y * 10, x * 10), rect)
+# def draw_canvas():
+#     global pixels
+#     start_x, start_y = border_x + offset_x, border_y + offset_y
+#     if len(pixels) != gridSize or len(pixels[0]) != gridSize:
+#         pixels = [[(0, 0, 0) for _ in range(gridSize)] for _ in range(gridSize)]
+#     #print(start_x, start_y)
+#     for y in range(gridSize):
+#         for x in range(gridSize):
+#             rect = pygame.Rect(pixel_size * x + start_x, y * pixel_size + start_y, pixel_size, pixel_size)
+#             pygame.draw.rect(screen, pixels[y][x], rect)
+#             #pygame.draw.rect(screen, (50, y * 10, x * 10), rect)
 
 def in_zone(x, y, width, height=None):
     if height is None:
@@ -487,6 +487,128 @@ def draw_selection(p1, p2, thickness, color=(255, 255, 255)):
 
     return all
 
+
+class Layer:
+    layers = []
+
+    def get_empty_pixel_list(no_colors=False, color=(0, 0, 0)):
+        if no_colors:
+            color = None
+        return [[color for _ in range(gridSize)] for _ in range(gridSize)]
+
+    def __init__(self, on_top=True, order_id=0, bg_color=(0, 0, 0), transparent_bg=False, enable_alpha=True, alpha_pixels=[], combined_layer=False):
+        self.order_id = len(Layer.layers) if on_top else order_id
+        if combined_layer:
+            transparent_bg = True
+        self.pixels = Layer.get_empty_pixel_list(no_colors=transparent_bg, color=bg_color)
+        if transparent_bg:
+            self.refresh_alpha_pixels()
+        else:
+            self.alpha_pixels = alpha_pixels
+        self.enable_alpha = enable_alpha
+        self.apply_alpha_pixels()
+
+        if not combined_layer:
+            Layer.layers.append(self) 
+
+    def draw_layer(self):
+        start_x, start_y = border_x + offset_x, border_y + offset_y
+        pixels = self.pixels
+        if len(pixels) != gridSize or len(pixels[0]) != gridSize:
+            pixels = [[(0, 0, 0) for _ in range(gridSize)] for _ in range(gridSize)]
+        for y in range(gridSize):
+            for x in range(gridSize):
+                if pixels[y][x] is None:
+                    continue
+                rect = pygame.Rect(pixel_size * x + start_x, y * pixel_size + start_y, pixel_size, pixel_size)
+                pygame.draw.rect(screen, pixels[y][x], rect)
+                #pygame.draw.rect(screen, (50, y * 10, x * 10), rect)
+
+
+    def delete_pixel(self, point):
+        x, y = point
+        if self.pixels[y][x] is None:
+            return
+        self.pixels[y][x] = None
+        self.alpha_pixels.append(point)
+
+    def paint_pixel(self, point, color):
+        x, y = point
+        self.pixels[y][x] = color
+        if point in self.alpha_pixels:
+            self.alpha_pixels.remove(point)
+
+    def refresh_alpha_pixels(self):
+        self.alpha_pixels = []
+        for y, row in enumerate(self.pixels):
+            for x, color in enumerate(row):
+                if color is None:
+                    self.alpha_pixels.append((x, y))
+
+    def apply_alpha_pixels(self):
+        if not self.enable_alpha:
+            return
+        if not self.alpha_pixels:
+            return
+        for point in self.alpha_pixels:
+            if point is not None:
+                x, y = point
+            self.pixels[y][x] = None
+
+    def apply_layer(self, layer_id, mask=[]):
+        pixels2 = Layer.layers[layer_id].pixels
+        for y, row in enumerate(pixels2):
+            if mask and y not in [y1 for _, y1 in mask]:
+                continue
+            for x, color in enumerate(row):
+                if mask and x not in [x1 for x1, _ in mask]:
+                    continue
+                if color is not None:
+                    self.pixels[y][x] = color
+                    if (x, y) in self.alpha_pixels:
+                        self.alpha_pixels.remove((x, y))
+    
+
+    def get_pixels(self):
+        return self.pixels
+    
+    def get_pixels_of_layer(layer_id):
+        if layer_id < 0 or layer_id >= len(Layer.layers):
+            return None
+        return Layer.layers[layer_id].get_pixels()
+    
+    def canvas_filled(pixels):
+        for row in pixels:
+            for color in row:
+                if color == None:
+                    return False
+        return True
+
+    def get_combined_layer():
+        top_layer_id = len(Layer.layers) - 1
+        result = Layer.get_empty_pixel_list(no_colors=True)
+        combined_layer = Layer(combined_layer=True)
+        combined_layer.apply_layer(top_layer_id)
+        top_layer_id -= 1
+        while not Layer.canvas_filled(combined_layer.pixels) and top_layer_id >= 0:
+            # current_layer = Layer.layers[top_layer_id]
+            print(combined_layer.pixels)
+            combined_layer.apply_layer(top_layer_id, combined_layer.alpha_pixels)
+            top_layer_id -= 1
+
+        return combined_layer
+            
+
+
+a = [(21, i) for i in range(15, 22)]
+b = []
+b.extend(a)
+c = b.copy()
+c.remove((21,16))
+layer3 = Layer(transparent_bg=False, bg_color=(124,124,53), alpha_pixels=[(21, i) for i in range(15, 22)])
+layer2 = Layer(transparent_bg=False, bg_color=(100,100,100), alpha_pixels=[(21, i) for i in range(15, 23)])
+layer1 = Layer(transparent_bg=False, bg_color=(150,160,170), alpha_pixels=[(21, i) for i in range(14, 24)] )
+
 class User:
     def get_current_toolbar(self):
         if self.LMB_toolbar.mouse_in_zone():
@@ -609,16 +731,16 @@ class Tool:
             use_brush(object_x, object_y, current_color)
 
         elif self.name == 'fill':
-            for x, y in fill(object_x, object_y, pixels[object_y][object_x], tolerance=fill_panel.object.properties[1].value):
+            for x, y in fill(object_x, object_y, layer1.pixels[object_y][object_x], tolerance=fill_panel.object.properties[1].value):
                 if fill_panel.object.properties[0].value == 1:
-                    pixels[y][x] = current_color
+                    layer1.pixels[y][x] = current_color
                 else:
                     variation_percent = fill_panel.object.properties[2].value
                     varied_color = get_color_variation(current_color, variation_percent)
-                    pixels[y][x] = varied_color if random.randint(1, 100) <= fill_panel.object.properties[3].value else current_color
+                    layer1.pixels[y][x] = varied_color if random.randint(1, 100) <= fill_panel.object.properties[3].value else current_color
 
         elif self.name == 'picker':
-            current_color = pixels[object_y][object_x]
+            current_color = layer1.pixels[object_y][object_x]
             if history[-1] != current_color:
                 history.append(current_color)
                 if len(history) > 20:
@@ -705,7 +827,8 @@ class Toolbar:
 def use_brush(object_x, object_y, color=current_color,):
     if object_x >= 0 and object_x < gridSize:
         if object_y >= 0 and object_y < gridSize:
-            pixels[object_y][object_x] = color
+            # pixels[object_y][object_x] = color
+            layer1.paint_pixel((object_x, object_y), color)
 
 toolbar1 = Toolbar(120, border_y + 20, toolset=toolset1)
 toolbar2 = Toolbar(1020, border_y + 20, toolset=toolset2)
@@ -1134,7 +1257,7 @@ while run:
     #print(current_loaded)
     if loading:
         current_loaded = np.clip(current_loaded, 0, num_files - 1)
-        pixels = load_object(current_loaded)
+        layer1.pixels = load_object(current_loaded)
         loading = False
 
     mousex, mousey = pygame.mouse.get_pos()
@@ -1197,7 +1320,7 @@ while run:
     draw_bar(20, rgb_y - 100, (255, 255, 255), color_idx=1)
     draw_bar(20, rgb_y - 200, (255, 255, 255), color_idx=2)
 
-    draw_canvas()
+    Layer.get_combined_layer().draw_layer()# layer2.draw_layer()
 
     draw_history()
 
@@ -1304,7 +1427,7 @@ while run:
             if event.button == 2:
                 #KLIKNIECIE SCROLLA
                 if in_zone(border_x, border_y, real_object_size, real_object_size):
-                    current_color = pixels[object_y][object_x]
+                    current_color = layer1.pixels[object_y][object_x]
                     if history[-1] != current_color:
                         history.append(current_color)
                         if len(history) > 20:
