@@ -495,11 +495,16 @@ class Layer:
         if no_colors:
             color = None
         return [[color for _ in range(gridSize)] for _ in range(gridSize)]
+    
+    def get_top_layer():
+        return Layer.layers[-1]
 
     def __init__(self, on_top=True, order_id=0, bg_color=(0, 0, 0), transparent_bg=False, enable_alpha=True, alpha_pixels=[], combined_layer=False):
         self.order_id = len(Layer.layers) if on_top else order_id
+        self.enabled = True
         if combined_layer:
             transparent_bg = True
+            self.order_id = -1
         self.pixels = Layer.get_empty_pixel_list(no_colors=transparent_bg, color=bg_color)
         if transparent_bg:
             self.refresh_alpha_pixels()
@@ -555,8 +560,11 @@ class Layer:
                 x, y = point
             self.pixels[y][x] = None
 
-    def apply_layer(self, layer_id, mask=[]):
-        pixels2 = Layer.layers[layer_id].pixels
+    def apply_layer(self, layer=None, layer_id=0, mask=[]):
+        if layer is None:
+            pixels2 = Layer.layers[layer_id].pixels
+        else:
+            pixels2 = layer.pixels
         for y, row in enumerate(pixels2):
             if mask and y not in [y1 for _, y1 in mask]:
                 continue
@@ -588,12 +596,11 @@ class Layer:
         top_layer_id = len(Layer.layers) - 1
         result = Layer.get_empty_pixel_list(no_colors=True)
         combined_layer = Layer(combined_layer=True)
-        combined_layer.apply_layer(top_layer_id)
-        top_layer_id -= 1
         while not Layer.canvas_filled(combined_layer.pixels) and top_layer_id >= 0:
-            # current_layer = Layer.layers[top_layer_id]
-            print(combined_layer.pixels)
-            combined_layer.apply_layer(top_layer_id, combined_layer.alpha_pixels)
+            current_layer = Layer.layers[top_layer_id]
+            # print(combined_layer.pixels)
+            if current_layer.enabled:
+                combined_layer.apply_layer(layer=current_layer, mask=combined_layer.alpha_pixels)
             top_layer_id -= 1
 
         return combined_layer
@@ -645,6 +652,8 @@ class User:
 
         self.is_selecting = False
         self.current_selection = (None, None)
+
+        self.current_layer = Layer.get_top_layer()
 
     def update(self):
         self.update_current_toolbar()
@@ -723,7 +732,7 @@ class Tool:
                 qbutton.draw()
         #pygame.draw.rect(screen, (255, 255, 255), (x, y, 32, 32), 2)
 
-    def use(self):
+    def use(self, layer=user.current_layer):
         if user.settings_mode:
             return
         global current_color
@@ -731,16 +740,16 @@ class Tool:
             use_brush(object_x, object_y, current_color)
 
         elif self.name == 'fill':
-            for x, y in fill(object_x, object_y, layer1.pixels[object_y][object_x], tolerance=fill_panel.object.properties[1].value):
+            for x, y in fill(object_x, object_y, layer.pixels[object_y][object_x], tolerance=fill_panel.object.properties[1].value):
                 if fill_panel.object.properties[0].value == 1:
-                    layer1.pixels[y][x] = current_color
+                    layer.pixels[y][x] = current_color
                 else:
                     variation_percent = fill_panel.object.properties[2].value
                     varied_color = get_color_variation(current_color, variation_percent)
-                    layer1.pixels[y][x] = varied_color if random.randint(1, 100) <= fill_panel.object.properties[3].value else current_color
+                    layer.pixels[y][x] = varied_color if random.randint(1, 100) <= fill_panel.object.properties[3].value else current_color
 
         elif self.name == 'picker':
-            current_color = layer1.pixels[object_y][object_x]
+            current_color = layer.pixels[object_y][object_x]
             if history[-1] != current_color:
                 history.append(current_color)
                 if len(history) > 20:
@@ -824,11 +833,15 @@ class Toolbar:
 
 
 
-def use_brush(object_x, object_y, color=current_color,):
+def use_brush(object_x, object_y, color=current_color, use_current_layer=True, layer_id=0):
+    if use_current_layer:
+        layer = user.current_layer
+    else:
+        layer = Layer.layers[layer_id]
     if object_x >= 0 and object_x < gridSize:
         if object_y >= 0 and object_y < gridSize:
             # pixels[object_y][object_x] = color
-            layer1.paint_pixel((object_x, object_y), color)
+            layer.paint_pixel((object_x, object_y), color)
 
 toolbar1 = Toolbar(120, border_y + 20, toolset=toolset1)
 toolbar2 = Toolbar(1020, border_y + 20, toolset=toolset2)
@@ -1257,7 +1270,7 @@ while run:
     #print(current_loaded)
     if loading:
         current_loaded = np.clip(current_loaded, 0, num_files - 1)
-        layer1.pixels = load_object(current_loaded)
+        user.current_layer.pixels = load_object(current_loaded)
         loading = False
 
     mousex, mousey = pygame.mouse.get_pos()
@@ -1382,7 +1395,7 @@ while run:
 
 
 
-    print(get_outline(object_x, object_y))
+    # print(get_outline(object_x, object_y))
 
     
 
@@ -1529,6 +1542,21 @@ while run:
                     pass
                 else:
                     save_object(name='object', data=pixels)
+                    # pygame.K_KP_
+            print(event.key)
+            if event.key in [pygame.K_KP1 + i for i in range(4)]:
+                number = event.key - pygame.K_KP1
+                if shift_pressed:
+                    Layer.layers[number].enabled = not Layer.layers[number].enabled
+                else:
+                    user.current_layer = Layer.layers[number]
+                
+            # if event.key == pygame.K_KP_1:
+            #     user.current_layer = Layer.layers[1]
+            # if event.key == pygame.K_KP_2:
+            #     user.current_layer = Layer.layers[2]
+            # if event.key == pygame.K_KP_3:
+            #     user.current_layer = Layer.layers[3]
 
 
             if not user.settings_mode:
