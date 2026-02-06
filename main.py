@@ -123,6 +123,28 @@ arrow_pressed = False
 
 
 
+def add_found_and_check_adjacent(current_x, current_y, result, fringe, visited):
+    result.append((current_x, current_y))
+
+    x1 = current_x - 1
+    x2 = current_x + 1
+    y1 = current_y - 1
+    y2 = current_y + 1
+
+    x1 = np.clip(x1, 0, gridSize - 1)
+    x2 = np.clip(x2, 0, gridSize - 1)
+    y1 = np.clip(y1, 0, gridSize - 1)
+    y2 = np.clip(y2, 0, gridSize - 1)
+
+    if (x1, current_y) not in visited and (x1, current_y) not in fringe:
+        fringe.append((x1, current_y))
+    if (x2, current_y) not in visited and (x2, current_y) not in fringe:
+        fringe.append((x2, current_y))
+    if (current_x, y1) not in visited and (current_x, y1) not in fringe:
+        fringe.append((current_x, y1))
+    if (current_x, y2) not in visited and (current_x, y2) not in fringe:
+        fringe.append((current_x, y2))
+
 # NARZEDZIA DO RYSOWANIA
 
 def fill(x, y, color, tolerance=0):
@@ -154,29 +176,14 @@ def fill(x, y, color, tolerance=0):
         current_x, current_y = fringe.pop(0)
         visited.append((current_x, current_y))
         current_color = user.current_layer.pixels[current_y][current_x]
-        if current_color is None:
-            current_color = (0,0,0)
-        if all(abs(current_color[i] - color[i]) <= max_diff for i in range(3)):
-            result.append((current_x, current_y))
-
-            x1 = current_x - 1
-            x2 = current_x + 1
-            y1 = current_y - 1
-            y2 = current_y + 1
-
-            x1 = np.clip(x1, 0, gridSize - 1)
-            x2 = np.clip(x2, 0, gridSize - 1)
-            y1 = np.clip(y1, 0, gridSize - 1)
-            y2 = np.clip(y2, 0, gridSize - 1)
-
-            if (x1, current_y) not in visited and (x1, current_y) not in fringe:
-                fringe.append((x1, current_y))
-            if (x2, current_y) not in visited and (x2, current_y) not in fringe:
-                fringe.append((x2, current_y))
-            if (current_x, y1) not in visited and (current_x, y1) not in fringe:
-                fringe.append((current_x, y1))
-            if (current_x, y2) not in visited and (current_x, y2) not in fringe:
-                fringe.append((current_x, y2))
+        if current_color is None and color is None:
+            add_found_and_check_adjacent(current_x, current_y, result, fringe, visited)
+            continue
+        elif current_color is None or color is None:
+            continue
+        elif all(abs(current_color[i] - color[i]) <= max_diff for i in range(3)):
+            add_found_and_check_adjacent(current_x, current_y, result, fringe, visited)
+            
 
     return result
 
@@ -552,6 +559,8 @@ class Layer:
                         pygame.draw.rect(screen, get_shade_of_color((90, 90, 90), ((i + 1 + int(clock/10)) % 10) / 10 + 0.5), rect)
                     continue
                 rect = pygame.Rect(pixel_size * x + start_x, y * pixel_size + start_y, pixel_size, pixel_size)
+                if pixels[y][x] is None:
+                    continue
                 pygame.draw.rect(screen, pixels[y][x], rect)
                 #pygame.draw.rect(screen, (50, y * 10, x * 10), rect)
 
@@ -588,8 +597,10 @@ class Layer:
             x, y = point
             self.pixels[y][x] = None
 
-    def apply_layer(self, layer=None, layer_id=0, mask=[]):
-        if layer is None:
+    def apply_layer(self, layer=None, layer_id=0, pixels=[], mask=[]):
+        if pixels:
+            pixels2 = pixels
+        elif layer is None:
             pixels2 = Layer.layers[layer_id].pixels
         else:
             pixels2 = layer.pixels
@@ -798,6 +809,7 @@ class ToolbarEntry:
 class Tool(ToolbarEntry):
 
     def use(self, layer=user.current_layer):
+        layer = user.current_layer
         if user.settings_mode:
             return
         global current_color
@@ -814,7 +826,7 @@ class Tool(ToolbarEntry):
                     layer.pixels[y][x] = varied_color if random.randint(1, 100) <= fill_panel.object.properties[3].value else current_color
 
         elif self.name == 'picker':
-            current_color = layer.pixels[object_y][object_x]
+            current_color = user.current_layer.pixels[object_y][object_x]
             if history[-1] != current_color:
                 history.append(current_color)
                 if len(history) > 20:
@@ -963,7 +975,102 @@ layer_toolbar = Toolbar(border_x - TOOL_SIZE - BORDER_SIZE, border_y + 370, tool
 user.LMB_toolbar = toolbar1
 user.RMB_toolbar = toolbar2
 
+class State:
+    def compress_pixel_list(list):
+        result = {}
+        for y, row in enumerate(list):
+            for x, color in enumerate(row):
+                if color not in result:
+                    result[color] = []
+                result[color].append((x, y))
+        return result
+    
+    def decompress_pixel_list(dict):
+        result = [[None for _ in range(gridSize)] for _ in range(gridSize)]
+        for color, points in dict.items():
+            for point in points:
+                x, y = point
+                result[y][x] = color
+        return result
 
+    def __init__(self):
+        self.color_history = history.copy()
+        self.layers_list = []
+
+        for layer in Layer.layers:
+            self.layers_list.append(layer.pixels)
+            self.layers_list[-1] = State.compress_pixel_list(self.layers_list[-1])
+        
+# print(State.compress_pixel_list(layer4.pixels))
+print(State.decompress_pixel_list(State.compress_pixel_list(layer4.pixels)))
+
+class History:
+    history = []
+    current_state_index = 0
+    max_undo = - len(history)
+
+    def save_current_state2():
+        state = (layer1.pixels.copy(), layer2.pixels.copy(), layer3.pixels.copy(), layer4.pixels.copy())
+        if len(History.history) > 0:
+            last_state = History.history[-1]
+            diff = False
+            for i, prev_layer in enumerate(last_state):
+                if prev_layer != Layer.layers[i].pixels:
+                    diff = True
+
+            if diff:
+                History.history.append(state)
+
+        else:
+            History.history.append(state)
+        History.max_undo = - len(History.history)
+
+    def save_current_state():
+        state = State()
+        # state = (layer1.pixels.copy(), layer2.pixels.copy(), layer3.pixels.copy(), layer4.pixels.copy())
+        if len(History.history) > 0:
+            last_state = History.history[-1]
+            diff = False
+            for i, prev_layer in enumerate(last_state.layers_list):
+                if prev_layer != Layer.layers[i].pixels:
+                    diff = True
+
+            if diff:
+                History.history.append(state)
+
+        else:
+            History.history.append(state)
+        History.max_undo = - len(History.history)
+        History.current_state_index = -1
+
+    def is_in_past():
+        return History.current_state_index < -1
+    
+    def cut_undone():
+        History.history = History.history[:History.current_state_index + 1]
+        History.current_state_index = -1
+
+    def load_state(index):
+        if index < 0 and abs(index) > len(History.history):
+            return
+        if index >= 0 and index > len(History.history) - 1:
+            return
+        state = History.history[index]
+        for new_layer, state_layer in zip(Layer.layers, state.layers_list):
+            new_layer.apply_layer(pixels=State.decompress_pixel_list(state_layer))
+
+    def undo():
+        if History.current_state_index > History.max_undo:
+            History.current_state_index -= 1
+            History.load_state(History.current_state_index)
+
+    def redo():
+        if History.current_state_index < -1:
+            History.current_state_index += 1
+            History.load_state(History.current_state_index)
+
+for i in range(20):
+    print(History.load_state(i - 10))
 
 class ObjectProperty:
     def __init__(self, name, initial_value=0, min_value=0, max_value=999, controlled_by=None, is_text=False, is_bool=False, negate_control=False):
@@ -1353,7 +1460,7 @@ class SpriteSheet:
 clock = 0
 
 shift_pressed = False
-    
+control_pressed = False
 #print(load_object(1))
 loading = False
 
@@ -1373,6 +1480,9 @@ dragged_panel = None
 dragged_point = (0, 0)
 
 color_history = []
+
+
+History.save_current_state()
 
 run = True
 while run:
@@ -1634,6 +1744,12 @@ while run:
                 dragging = False
                 dragged_panel = None
 
+                if in_zone(border_x, border_y, frameWidth):
+                    if History.is_in_past():
+                        History.cut_undone()
+                    History.save_current_state()
+                    print(len(History.history))
+
             if event.button == 3:
                 # PUSZCZENIE MYSZKI PRAWYM
                 mouse_pressed_RB = False
@@ -1662,6 +1778,8 @@ while run:
 
             if event.key == pygame.K_LSHIFT:
                 shift_pressed = True
+            if event.key == pygame.K_LCTRL:
+                control_pressed = True
             if event.key == pygame.K_s:
                 if shift_pressed:
                     # save_to_new_object_type()
@@ -1707,6 +1825,15 @@ while run:
                 pixels = [[(0, 0, 0) for _ in range(gridSize)] for _ in range(gridSize)]
                 # print('ciemno')
 
+            if event.key == pygame.K_z:
+                if control_pressed:
+                    History.undo()
+
+            if event.key == pygame.K_y:
+                if control_pressed:
+                    History.redo()
+
+
             if event.key == pygame.K_ESCAPE:
                 user.settings_mode = False
 
@@ -1724,7 +1851,8 @@ while run:
 
                         for y in range(y1, y2 + 1):
                             for x in range(x1, x2 + 1):
-                                pixels[y][x] = (0, 0, 0)
+                                # pixels[y][x] = (0, 0, 0)
+                                user.current_layer.pixels[y][x] = None
                         # user.grip_point = None
                         # user.current_point = None
                         # user.current_selection = (None, None)
@@ -1738,6 +1866,8 @@ while run:
                 arrow_pressed = False
             if event.key == pygame.K_LSHIFT:
                 shift_pressed = False
+            if event.key == pygame.K_LCTRL:
+                control_pressed = False
 
 
             
