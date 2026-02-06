@@ -153,7 +153,9 @@ def fill(x, y, color, tolerance=0):
     while fringe:
         current_x, current_y = fringe.pop(0)
         visited.append((current_x, current_y))
-        current_color = pixels[current_y][current_x]
+        current_color = user.current_layer.pixels[current_y][current_x]
+        if current_color is None:
+            current_color = (0,0,0)
         if all(abs(current_color[i] - color[i]) <= max_diff for i in range(3)):
             result.append((current_x, current_y))
 
@@ -612,9 +614,10 @@ b = []
 b.extend(a)
 c = b.copy()
 c.remove((21,16))
-layer3 = Layer(transparent_bg=False, bg_color=(124,124,53), alpha_pixels=[(21, i) for i in range(15, 22)])
+layer1 = Layer(transparent_bg=False, bg_color=(124,124,53), alpha_pixels=[(21, i) for i in range(15, 22)])
 layer2 = Layer(transparent_bg=False, bg_color=(100,100,100), alpha_pixels=[(21, i) for i in range(15, 23)])
-layer1 = Layer(transparent_bg=False, bg_color=(150,160,170), alpha_pixels=[(21, i) for i in range(14, 24)] )
+layer3 = Layer(transparent_bg=False, bg_color=(150,160,170), alpha_pixels=[(21, i) for i in range(14, 24)] )
+layer4 = Layer(transparent_bg=False, bg_color=(150,160,170), alpha_pixels=[(21, i) for i in range(14, 24)] )
 
 class User:
     def get_current_toolbar(self):
@@ -639,6 +642,7 @@ class User:
 
         self.LMB_toolbar = None
         self.RMB_toolbar = None
+        self.layer_toolbar = None
 
         self.mouse_toolbars = [self.LMB_toolbar, self.RMB_toolbar]
 
@@ -676,22 +680,34 @@ TOOL_SIZE = 64
 BORDER_SIZE = 4
 
 
-class Tool:
-    def __init__(self, name, icon_path, quick_buttons_names=[]):
+class ToolbarEntry:
+    def __init__(self, name, icon_path='icons\empty.jpg', use_text=False, text='', quick_buttons_names=[]):
         self.name = name
         self.icon_path = icon_path
+        # if use_text:
+        #     self.icon_path = 'icons\empty.jpg'
         self.icon = pygame.image.load(icon_path)
         self.icon = pygame.transform.scale(self.icon, (150, 150))
+
+
+        self.text = text
 
         self.parent_toolbar = None
 
         self.x = 0
         self.y = 0
 
+        self.width = TOOL_SIZE
+        self.height = TOOL_SIZE
+
         self.is_selected = False
+
+        self.shadow = False
 
         self.quick_buttons_names = quick_buttons_names
         self.quick_buttons = []
+
+        self.font = pygame.font.SysFont("Arial", 48)
         
         
 
@@ -720,17 +736,33 @@ class Tool:
 
 
         
-        
+    def draw_text_centered(self):
+        text_surface = self.font.render(self.text, True, (0,0,0))
+        text_rect = text_surface.get_rect(center=(self.x + TOOL_SIZE // 2, self.y + TOOL_SIZE // 2))
+        # text_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        # text_rect.center=(self.x + self.width // 2, self.y + self.height // 2)
+        screen.blit(text_surface, text_rect)
 
 
     def draw(self, x, y):
         screen.blit(self.icon, (x, y))
+        if self.shadow:
+            shadow = pygame.Rect(self.x, self.y, self.width, self.height)
+            pygame.draw.rect(screen, (50, 50, 50), shadow)
+        self.draw_text_centered()
         if self.is_selected:
             pygame.draw.rect(screen, (255, 255, 255), (x - 2, y - 2, self.parent_toolbar.tool_size + 4, self.parent_toolbar.tool_size + 4), 2)
         
             for qbutton in self.quick_buttons:
                 qbutton.draw()
         #pygame.draw.rect(screen, (255, 255, 255), (x, y, 32, 32), 2)
+    
+    def mouse_in_zone(self):
+        if in_zone(self.x, self.y, self.width, self.height):
+            return True
+        return False
+
+class Tool(ToolbarEntry):
 
     def use(self, layer=user.current_layer):
         if user.settings_mode:
@@ -769,6 +801,8 @@ class Tool:
             user.current_point = coords_on_object
             draw_line(user.grip_point, user.current_point)
 
+    
+
 def create_tools():
     tools = []
     tools.append(Tool('brush', 'icons/brush.jpg'))
@@ -781,8 +815,30 @@ def create_tools():
 toolset1 = create_tools()
 toolset2 = create_tools()
 
+class LayerEntry(ToolbarEntry):
+
+    def update(self):
+        if self.is_selected:
+            index = int(self.text) - 1
+            user.current_layer = Layer.layers[index]
+
+def create_layer_ui():
+    tools = []
+    tools.append(LayerEntry('l1', use_text=True, text='1'))
+    tools.append(LayerEntry('l2', use_text=True, text='2'))
+    tools.append(LayerEntry('l3', use_text=True, text='3'))
+    tools.append(LayerEntry('l4', use_text=True, text='4'))
+    return tools
+
+
+layer_ui = create_layer_ui()
+
+# class LayerEntry(ToolbarEntry):
+#     # def use
 
 class Toolbar:
+    toolbars = []
+
     def generate_tool_y_positions(self):
         pos1 = self.border_size
         distance = self.tool_size + self.border_size
@@ -809,6 +865,8 @@ class Toolbar:
         self.width = self.tool_size + self.border_size * 2
         self.height = self.tool_size * len(self.tools) + self.border_size * (len(self.tools) + 1)
 
+        Toolbar.toolbars.append(self)
+
     def mouse_in_zone(self):
         if in_zone(self.x, self.y, self.width, self.height):
             return True
@@ -831,7 +889,11 @@ class Toolbar:
         for qbutton in qbuttons:
             qbutton.update(mousex, mousey, mouse_pressed_LB)
 
-
+    def get_entry_mouse_is_on(self):
+        for idx, tool in enumerate(self.tools):
+            if tool.mouse_in_zone():
+                return idx
+        return None
 
 def use_brush(object_x, object_y, color=current_color, use_current_layer=True, layer_id=0):
     if use_current_layer:
@@ -846,7 +908,7 @@ def use_brush(object_x, object_y, color=current_color, use_current_layer=True, l
 toolbar1 = Toolbar(120, border_y + 20, toolset=toolset1)
 toolbar2 = Toolbar(1020, border_y + 20, toolset=toolset2)
 
-
+layer_toolbar = Toolbar(border_x - TOOL_SIZE - BORDER_SIZE, border_y + 370, toolset=layer_ui)
 
 user.LMB_toolbar = toolbar1
 user.RMB_toolbar = toolbar2
@@ -1336,13 +1398,15 @@ while run:
     Layer.get_combined_layer().draw_layer()# layer2.draw_layer()
 
     draw_history()
-
+    user.current_layer = Layer.layers[layer_toolbar.selected_index]
     toolbar1.handle_buttons()
     toolbar2.handle_buttons()
-
+    layer_toolbar.handle_buttons()
 
     toolbar1.draw()
     toolbar2.draw()
+
+    layer_toolbar.draw()
 
     coll = [0,0,0]
     coll[0] = (current_color[0] + clock // 2) % 255
@@ -1427,7 +1491,10 @@ while run:
                             dragged_panel = panel
                             panel.last_pos = (panel.x, panel.y)
 
-
+                if layer_toolbar.mouse_in_zone():
+                    layer_idx = layer_toolbar.get_entry_mouse_is_on()
+                    Layer.layers[layer_idx].enabled = not Layer.layers[layer_idx].enabled
+                    layer_toolbar.tools[layer_idx].shadow = not layer_toolbar.tools[layer_idx].shadow
 
                 if user.grip_point is None or True:
                     user.grip_point = (object_x, object_y)
@@ -1465,8 +1532,14 @@ while run:
                         if current_history_id > 0:
                             current_history_id -= 1
                             current_color = history[len(history) - 1 - current_history_id]
-                    if user.current_toolbar != 0:
-                        user.change_tool(-1)
+                    for toolbar in Toolbar.toolbars:
+                        if toolbar.mouse_in_zone():
+                            if toolbar.selected_index > 0:
+                                toolbar.selected_index -= 1
+                                user.current_layer = layer_ui
+                        
+                    # if user.current_toolbar != 0:
+                    #     user.change_tool(-1)
 
 
                 if user.settings_mode:
@@ -1488,8 +1561,15 @@ while run:
                             current_history_id += 1
                             current_color = history[len(history) - 1 - current_history_id]
 
-                    if user.current_toolbar != 0:
-                        user.change_tool(1)
+                    for toolbar in Toolbar.toolbars:
+                        if toolbar.mouse_in_zone():
+                            if toolbar.selected_index < len(toolbar.tools) - 1:
+                                toolbar.selected_index += 1
+
+                    
+                            
+                    # if user.current_toolbar != 0:
+                    #     user.change_tool(1)
 
 
                 if user.settings_mode:
