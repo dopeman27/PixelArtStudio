@@ -534,10 +534,11 @@ class Layer:
 
     def delete_pixel(self, point):
         x, y = point
-        if self.pixels[y][x] is None:
-            return
-        self.pixels[y][x] = None
-        self.alpha_pixels.append(point)
+        if self.pixels[y][x] is not None:
+    
+            self.pixels[y][x] = None
+        if point not in self.alpha_pixels:
+            self.alpha_pixels.append(point)
 
     def paint_pixel(self, point, color):
         x, y = point
@@ -558,8 +559,9 @@ class Layer:
         if not self.alpha_pixels:
             return
         for point in self.alpha_pixels:
-            if point is not None:
-                x, y = point
+            if point is None:
+                continue
+            x, y = point
             self.pixels[y][x] = None
 
     def apply_layer(self, layer=None, layer_id=0, mask=[]):
@@ -571,7 +573,7 @@ class Layer:
             if mask and y not in [y1 for _, y1 in mask]:
                 continue
             for x, color in enumerate(row):
-                if mask and x not in [x1 for x1, _ in mask]:
+                if mask and (x, y) not in mask:
                     continue
                 if color is not None:
                     self.pixels[y][x] = color
@@ -599,10 +601,13 @@ class Layer:
         result = Layer.get_empty_pixel_list(no_colors=True)
         combined_layer = Layer(combined_layer=True)
         while not Layer.canvas_filled(combined_layer.pixels) and top_layer_id >= 0:
+            combined_layer.refresh_alpha_pixels()
             current_layer = Layer.layers[top_layer_id]
             # print(combined_layer.pixels)
             if current_layer.enabled:
                 combined_layer.apply_layer(layer=current_layer, mask=combined_layer.alpha_pixels)
+                combined_layer.refresh_alpha_pixels()
+
             top_layer_id -= 1
 
         return combined_layer
@@ -681,7 +686,7 @@ BORDER_SIZE = 4
 
 
 class ToolbarEntry:
-    def __init__(self, name, icon_path='icons\empty.jpg', use_text=False, text='', quick_buttons_names=[]):
+    def __init__(self, name, icon_path=r'icons\empty.jpg', use_text=False, text='', quick_buttons_names=[]):
         self.name = name
         self.icon_path = icon_path
         # if use_text:
@@ -712,9 +717,13 @@ class ToolbarEntry:
         
 
 
-    def set_position(self):
+    def set_position(self, flipped=False):
+        tools_number = len(Layer.layers)
         index = self.parent_toolbar.tools.index(self)
         self.x = self.parent_toolbar.x + self.parent_toolbar.border_size
+        index2 = tools_number - index - 1
+        if flipped:
+            index = index2
         self.y = self.parent_toolbar.y + self.parent_toolbar.border_size + index * (self.parent_toolbar.tool_size + self.parent_toolbar.border_size)
 
 
@@ -801,6 +810,9 @@ class Tool(ToolbarEntry):
             user.current_point = coords_on_object
             draw_line(user.grip_point, user.current_point)
 
+        elif self.name == 'eraser':
+            user.current_layer.delete_pixel((object_x, object_y))
+
     
 
 def create_tools():
@@ -809,6 +821,7 @@ def create_tools():
     tools.append(Tool('fill', 'icons/fill.jpg'))
     tools.append(Tool('picker', 'icons/picker3.jpg'))
     tools.append(Tool('selection', 'icons/hand2.jpg', ['Wyłącz zaznaczenie']))
+    tools.append(Tool('eraser', 'icons/eraser1.jpg'))
     # tools.append(Tool('line', 'icons/brush.jpg'))
     return tools
 
@@ -839,12 +852,13 @@ layer_ui = create_layer_ui()
 class Toolbar:
     toolbars = []
 
-    def generate_tool_y_positions(self):
+    def generate_tool_y_positions(self, flipped=False):
         pos1 = self.border_size
         distance = self.tool_size + self.border_size
-        return [pos1 + i * distance for i in range(len(self.tools))]
+        result = [pos1 + i * distance for i in range(len(self.tools))]
+        return result.reverse() if flipped else result
     
-    def __init__(self, x, y, toolset=toolset1):
+    def __init__(self, x, y, toolset=toolset1, flip_y=False):
         self.x = x
         self.y = y
 
@@ -852,15 +866,17 @@ class Toolbar:
         self.border_size = BORDER_SIZE
         self.tools = toolset
 
+        self.flip_controls = flip_y
+
         for tool in self.tools:
             tool.parent_toolbar = self
 
-        self.tool_y_positions = self.generate_tool_y_positions()
+        self.tool_y_positions = self.generate_tool_y_positions(flip_y)
 
         for tool in self.tools:
-            tool.set_position()
+            tool.set_position(flip_y)
 
-        self.selected_index = 0 if user.mouse_toolbars[0] == self else 1
+        self.selected_index = 0 if user.mouse_toolbars[0] == self else 0
 
         self.width = self.tool_size + self.border_size * 2
         self.height = self.tool_size * len(self.tools) + self.border_size * (len(self.tools) + 1)
@@ -894,6 +910,16 @@ class Toolbar:
             if tool.mouse_in_zone():
                 return idx
         return None
+    
+    def next_tool(self):
+        if self.mouse_in_zone():
+            if self.selected_index < len(toolbar.tools) - 1:
+                self.selected_index += 1
+
+    def previous_tool(self):
+        if self.mouse_in_zone():
+            if self.selected_index > 0:
+                self.selected_index -= 1
 
 def use_brush(object_x, object_y, color=current_color, use_current_layer=True, layer_id=0):
     if use_current_layer:
@@ -908,7 +934,7 @@ def use_brush(object_x, object_y, color=current_color, use_current_layer=True, l
 toolbar1 = Toolbar(120, border_y + 20, toolset=toolset1)
 toolbar2 = Toolbar(1020, border_y + 20, toolset=toolset2)
 
-layer_toolbar = Toolbar(border_x - TOOL_SIZE - BORDER_SIZE, border_y + 370, toolset=layer_ui)
+layer_toolbar = Toolbar(border_x - TOOL_SIZE - BORDER_SIZE, border_y + 370, toolset=layer_ui, flip_y=True)
 
 user.LMB_toolbar = toolbar1
 user.RMB_toolbar = toolbar2
@@ -1533,10 +1559,8 @@ while run:
                             current_history_id -= 1
                             current_color = history[len(history) - 1 - current_history_id]
                     for toolbar in Toolbar.toolbars:
-                        if toolbar.mouse_in_zone():
-                            if toolbar.selected_index > 0:
-                                toolbar.selected_index -= 1
-                                user.current_layer = layer_ui
+                        toolbar.previous_tool() if not toolbar.flip_controls else toolbar.next_tool()
+                        
                         
                     # if user.current_toolbar != 0:
                     #     user.change_tool(-1)
@@ -1562,10 +1586,8 @@ while run:
                             current_color = history[len(history) - 1 - current_history_id]
 
                     for toolbar in Toolbar.toolbars:
-                        if toolbar.mouse_in_zone():
-                            if toolbar.selected_index < len(toolbar.tools) - 1:
-                                toolbar.selected_index += 1
-
+                        toolbar.previous_tool() if toolbar.flip_controls else toolbar.next_tool()
+                    user.current_layer = layer_ui
                     
                             
                     # if user.current_toolbar != 0:
