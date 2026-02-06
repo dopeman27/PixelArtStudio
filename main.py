@@ -194,6 +194,27 @@ def get_color_variation(color, variation_percent):
 
     return (r_new, g_new, b_new)
 
+def get_shade_of_color(color, brightness):
+    r, g, b = color
+    biggest = max(r, g, b)
+    lowest = min(r,g,b)
+    max_up = 255 - biggest
+    max_down = lowest
+    if brightness <= 1:
+        subtract = int(max_down * (1 - brightness))
+        r -= subtract
+        g -= subtract
+        b -= subtract
+        return (r, g, b)
+    else:
+        add = int(max_up * (1 - brightness))
+        r += add
+        g += add
+        b += add
+        return (r, g, b)
+
+
+
 # from game_settings import num_blocks_vertically
 num_blocks_vertically = 14
 
@@ -526,6 +547,9 @@ class Layer:
         for y in range(gridSize):
             for x in range(gridSize):
                 if pixels[y][x] is None:
+                    for i in range(10):
+                        rect = pygame.Rect(pixel_size * x + start_x + (i* (pixel_size/10)), y * pixel_size + start_y, pixel_size / 5, pixel_size)
+                        pygame.draw.rect(screen, get_shade_of_color((90, 90, 90), ((i + 1 + int(clock/10)) % 10) / 10 + 0.5), rect)
                     continue
                 rect = pygame.Rect(pixel_size * x + start_x, y * pixel_size + start_y, pixel_size, pixel_size)
                 pygame.draw.rect(screen, pixels[y][x], rect)
