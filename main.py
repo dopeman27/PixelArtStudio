@@ -597,7 +597,7 @@ class Layer:
             x, y = point
             self.pixels[y][x] = None
 
-    def apply_layer(self, layer=None, layer_id=0, pixels=[], mask=[]):
+    def apply_layer(self, layer=None, layer_id=0, pixels=[], mask=[], remove_when_transparent=False):
         if pixels:
             pixels2 = pixels
         elif layer is None:
@@ -610,7 +610,7 @@ class Layer:
             for x, color in enumerate(row):
                 if mask and (x, y) not in mask:
                     continue
-                if color is not None:
+                if color is not None or remove_when_transparent:
                     self.pixels[y][x] = color
                     if (x, y) in self.alpha_pixels:
                         self.alpha_pixels.remove((x, y))
@@ -1057,7 +1057,7 @@ class History:
             return
         state = History.history[index]
         for new_layer, state_layer in zip(Layer.layers, state.layers_list):
-            new_layer.apply_layer(pixels=State.decompress_pixel_list(state_layer))
+            new_layer.apply_layer(pixels=State.decompress_pixel_list(state_layer), remove_when_transparent=True)
 
     def undo():
         if History.current_state_index > History.max_undo:
@@ -1667,7 +1667,7 @@ while run:
             if event.button == 2:
                 #KLIKNIECIE SCROLLA
                 if in_zone(border_x, border_y, real_object_size, real_object_size):
-                    current_color = layer1.pixels[object_y][object_x]
+                    current_color = user.current_layer.pixels[object_y][object_x] or (0, 0, 0)
                     if history[-1] != current_color:
                         history.append(current_color)
                         if len(history) > 20:
@@ -1828,6 +1828,7 @@ while run:
             if event.key == pygame.K_z:
                 if control_pressed:
                     History.undo()
+                    print(['h' for _ in History.history])
 
             if event.key == pygame.K_y:
                 if control_pressed:
