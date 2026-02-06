@@ -543,6 +543,8 @@ class Layer:
         self.enable_alpha = enable_alpha
         self.apply_alpha_pixels()
 
+        self.opacity = 100
+
         if not combined_layer:
             Layer.layers.append(self) 
 
@@ -563,6 +565,25 @@ class Layer:
                     continue
                 pygame.draw.rect(screen, pixels[y][x], rect)
                 #pygame.draw.rect(screen, (50, y * 10, x * 10), rect)
+
+    def update_opacity(self):
+        entry = layer_toolbar.tools[self.order_id]
+        self.opacity = entry.opacity_bar_value
+
+    def mix_layers():
+        for layer in Layer.layers:
+            layer.update_opacity()
+
+        result = []
+        for y in range(gridSize):
+            row = []
+            for x in range(gridSize):
+                color = Layer.mix_colors([layer4.pixels[y][x], layer3.pixels[y][x], layer2.pixels[y][x], layer1.pixels[y][x]],
+                                         [layer4.opacity, layer3.opacity, layer2.opacity, layer1.opacity]) or (0,0,0)
+                row.append(color)
+            result.append(row)
+
+        return result
 
 
     def delete_pixel(self, point):
@@ -630,6 +651,22 @@ class Layer:
                 if color == None:
                     return False
         return True
+
+    def mix_colors(colors=[], opacities=[]):
+        for id, color in enumerate(colors):
+            if color is None:
+                colors[id] = (0, 0, 0)
+                opacities[id] = 0
+        r = [int(color[0] * (opacities[i]/100)) for i, color in enumerate(colors)]
+        g = [int(color[1] * (opacities[i]/100)) for i, color in enumerate(colors)]
+        b = [int(color[2] * (opacities[i]/100)) for i, color in enumerate(colors)]
+
+        r = int(np.clip(sum(r), 0, 255))
+        g = int(np.clip(sum(g), 0, 255))
+        b = int(np.clip(sum(b), 0, 255))
+
+        return (r, g, b)
+
 
     def get_combined_layer():
         top_layer_id = len(Layer.layers) - 1
@@ -865,6 +902,25 @@ toolset1 = create_tools()
 toolset2 = create_tools()
 
 class LayerEntry(ToolbarEntry):
+    def __init__(self, name, icon_path=r'icons\empty.jpg', use_text=False, text='', quick_buttons_names=[]):
+        super().__init__(name, icon_path, use_text, text, quick_buttons_names)
+
+        self.opacity_bar_value = 100
+
+    def draw_opacity_bar(self, height=4):
+        x = self.x + int(BORDER_SIZE / 2) - 1
+        y = self.y + self.height - height
+
+        pygame.draw.rect(screen, (155,125,155), pygame.Rect(x, y, self.get_opacity_bar_width(), height))
+
+    def draw(self, x, y):
+        x = self.x
+        y = self.y
+        super().draw(x, y)
+        self.draw_opacity_bar()
+
+    def get_opacity_bar_width(self):
+        return int(self.width * (self.opacity_bar_value / 100)) - BORDER_SIZE + 1
 
     def update(self):
         if self.is_selected:
@@ -1556,6 +1612,9 @@ while run:
     draw_bar(20, rgb_y - 200, (255, 255, 255), color_idx=2)
 
     Layer.get_combined_layer().draw_layer()# layer2.draw_layer()
+    mixed_layer = Layer(combined_layer=True, transparent_bg=True)
+    mixed_layer.pixels = Layer.mix_layers()
+    mixed_layer.draw_layer()
 
     draw_history()
     user.current_layer = Layer.layers[layer_toolbar.selected_index]
@@ -1567,6 +1626,11 @@ while run:
     toolbar2.draw()
 
     layer_toolbar.draw()
+
+    # rect = pygame.Rect(30, 20, 100, 100)
+    # pygame.draw.rect(screen, Layer.mix_colors(
+    #     [current_color, user.current_layer.pixels[object_y][object_x], user.current_layer.pixels[5][5]], 
+    #     [20, 20, 20]), rect)
 
     coll = [0,0,0]
     coll[0] = (current_color[0] + clock // 2) % 255
@@ -1693,7 +1757,17 @@ while run:
                             current_history_id -= 1
                             current_color = history[len(history) - 1 - current_history_id]
                     for toolbar in Toolbar.toolbars:
-                        toolbar.previous_tool() if not toolbar.flip_controls else toolbar.next_tool()
+                        if toolbar == layer_toolbar:
+                            if shift_pressed:
+                                
+                                idx = layer_toolbar.get_entry_mouse_is_on()
+                                op = layer_toolbar.tools[idx].opacity_bar_value
+                                if op <= 95:
+                                    layer_toolbar.tools[idx].opacity_bar_value += 5
+                            else:
+                                toolbar.previous_tool() if not toolbar.flip_controls else toolbar.next_tool()
+                        else:
+                            toolbar.previous_tool() if not toolbar.flip_controls else toolbar.next_tool()
                         
                         
                     # if user.current_toolbar != 0:
@@ -1720,7 +1794,17 @@ while run:
                             current_color = history[len(history) - 1 - current_history_id]
 
                     for toolbar in Toolbar.toolbars:
-                        toolbar.previous_tool() if toolbar.flip_controls else toolbar.next_tool()
+                        if toolbar == layer_toolbar:
+                            if shift_pressed:
+                                
+                                idx = layer_toolbar.get_entry_mouse_is_on()
+                                op = layer_toolbar.tools[idx].opacity_bar_value
+                                if op >= 5:
+                                    layer_toolbar.tools[idx].opacity_bar_value -= 5
+                            else:
+                                toolbar.previous_tool() if toolbar.flip_controls else toolbar.next_tool()
+                        else:
+                            toolbar.previous_tool() if toolbar.flip_controls else toolbar.next_tool()
                     user.current_layer = layer_ui
                     
                             
